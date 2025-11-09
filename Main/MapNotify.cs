@@ -1,4 +1,4 @@
-﻿using ExileCore;
+using ExileCore;
 using ExileCore.PoEMemory.Components;
 using ExileCore.PoEMemory.Elements;
 using ExileCore.PoEMemory.Elements.InventoryElements;
@@ -33,11 +33,19 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
     private List<NormalInventoryItem> GetInventoryItems()
     {
         var result = new List<NormalInventoryItem>();
-        if (ingameState.IngameUi.InventoryPanel.IsVisible)
-        {
-            result.AddRange(ingameState.IngameUi.InventoryPanel[InventoryIndex.PlayerInventory].VisibleInventoryItems.Where(item => item.Item.HasComponent<Map>()));
-        }
-
+		if (ingameState?.IngameUi?.InventoryPanel?.IsVisible == true)
+		{
+			var playerInv = ingameState.IngameUi.InventoryPanel[InventoryIndex.PlayerInventory];
+			var visible = playerInv?.VisibleInventoryItems;
+			if (visible != null && visible.Count > 0)
+			{
+				foreach (var it in visible)
+				{
+					if (it?.Item != null && it.Item.HasComponent<Map>())
+						result.Add(it);
+				}
+			}
+		}
         return result;
     }
 
@@ -45,12 +53,21 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
     {
         var result = new List<NormalInventoryItem>();
         var stashIndex = -1;
-        if (ingameState.IngameUi.StashElement.IsVisible && ingameState.IngameUi.StashElement.VisibleStash != null)
-        {
-            stashIndex = ingameState.IngameUi.StashElement.IndexVisibleStash;
-            result.AddRange(ingameState.IngameUi.StashElement.VisibleStash.VisibleInventoryItems.Where(item => item.Item.HasComponent<Map>()));
-        }
+		if (ingameState?.IngameUi?.StashElement?.IsVisible == true &&
+			ingameState.IngameUi.StashElement.VisibleStash != null)
+		{
+			stashIndex = ingameState.IngameUi.StashElement.IndexVisibleStash;
 
+			var visibleInv = ingameState.IngameUi.StashElement.VisibleStash.VisibleInventoryItems;
+			if (visibleInv != null && visibleInv.Count > 0)
+			{
+				foreach (var it in visibleInv)
+				{
+					if (it?.Item != null && it.Item.HasComponent<Map>())
+						result.Add(it);
+				}
+			}
+		}
         return (stashIndex, result);
     }
 
