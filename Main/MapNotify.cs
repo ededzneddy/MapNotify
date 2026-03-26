@@ -23,6 +23,7 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
     private static IngameState ingameState;
     private CachedValue<List<NormalInventoryItem>> _inventoryItems;
     private CachedValue<(int stashIndex, List<NormalInventoryItem>)> _stashItems;
+    private CachedValue<List<NormalInventoryItem>> _faustusItems;
 
     // Profile system (added)
     public static ProfileManager _profileManager;
@@ -58,6 +59,19 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
         return (stashIndex, result);
     }
 
+    private List<NormalInventoryItem> GetFaustusItems()
+    {
+        var result = new List<NormalInventoryItem>();
+        try
+        {
+            var purchaseWindow = ingameState.IngameUi.PurchaseWindow;
+            if (purchaseWindow?.IsVisible == true)
+                result.AddRange(FindMapItems(purchaseWindow));
+        }
+        catch { }
+        return result;
+    }
+
     public override bool Initialise()
     {
         base.Initialise();
@@ -67,6 +81,7 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
         ingameState = gameController.IngameState;
         _inventoryItems = new TimeCache<List<NormalInventoryItem>>(GetInventoryItems, Settings.InventoryCacheInterval);
         _stashItems = new TimeCache<(int stashIndex, List<NormalInventoryItem>)>(GetStashItems, Settings.StashCacheInterval);
+        _faustusItems = new TimeCache<List<NormalInventoryItem>>(GetFaustusItems, 500);
         // Init profiles (added)
         LiveSettings = Settings;
         _modEntries = ModDataLoader.Load(DirectoryFullName);
@@ -166,10 +181,30 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
         }
     }
 
+    // Cached flat lists for border checking — avoids LINQ per-frame per-item
+    private List<string> _cachedEnabledTypes  = new();
+    private List<string> _cachedBrickedTypes  = new();
+    private int          _lastEnabledCount    = -1;
+    private int          _lastBrickedCount    = -1;
+
+    private void RefreshBorderCache()
+    {
+        int ec = LiveSettings?.EnabledMods?.Count ?? 0;
+        int bc = LiveSettings?.BrickedMods?.Count  ?? 0;
+        if (ec == _lastEnabledCount && bc == _lastBrickedCount) return;
+        _cachedEnabledTypes = LiveSettings?.EnabledMods?
+            .Where(kv => kv.Value).Select(kv => kv.Key).ToList() ?? new();
+        _cachedBrickedTypes = LiveSettings?.BrickedMods?
+            .Where(kv => kv.Value).Select(kv => kv.Key).ToList() ?? new();
+        _lastEnabledCount = ec;
+        _lastBrickedCount = bc;
+    }
+
     private void DrawMapBorders(NormalInventoryItem item)
     {
         if (!item.Item.HasComponent<MapKey>())
             return;
+        RefreshBorderCache();
 
         var rect = item.GetClientRectCache;
         double deflatePercent = Settings.BorderDeflation;
@@ -198,9 +233,8 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
                 if (Settings.BoxForMapBadWarnings)
                 {
                     bool hasBricked = mods.Any(mod =>
-                        _modEntries?.Any(e =>
-                            LiveSettings.BrickedMods.TryGetValue(e.ModType, out var b) && b &&
-                            mod.RawName.Contains(e.ModType, StringComparison.OrdinalIgnoreCase)) == true);
+                        _cachedBrickedTypes.Any(t =>
+                            mod.RawName.Contains(t, StringComparison.OrdinalIgnoreCase)));
                     if (hasBricked)
                         modColor = Settings.Bricked.ToSharpColor();
                 }
@@ -209,9 +243,8 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
                 if (modColor == null && Settings.BoxForMapWarnings)
                 {
                     bool hasWarning = mods.Any(mod =>
-                        _modEntries?.Any(e =>
-                            LiveSettings.EnabledMods.TryGetValue(e.ModType, out var en) && en &&
-                            mod.RawName.Contains(e.ModType, StringComparison.OrdinalIgnoreCase)) == true);
+                        _cachedEnabledTypes.Any(t =>
+                            mod.RawName.Contains(t, StringComparison.OrdinalIgnoreCase)));
                     if (hasWarning)
                         modColor = Settings.MapBorderWarnings.ToSharpColor();
                 }
