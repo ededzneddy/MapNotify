@@ -120,7 +120,7 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
             }
             if (Settings.AlwaysShowTooltip || ItemDetails.ActiveWarnings.Count > 0)
             {
-                var boxOrigin = new nuVector2(MouseLite.GetCursorPositionVector().X + 80, MouseLite.GetCursorPositionVector().Y);
+                var boxOrigin = new nuVector2(MouseLite.GetCursorPositionVector().X + 50, MouseLite.GetCursorPositionVector().Y);
 
                 var _opened = true;
                 pushedColors += 1;
@@ -316,17 +316,6 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
             foreach (var item in _stashItems.Value.Item2)
                 DrawMapBorders(item);
         }
-
-        // Guild stash
-        try
-        {
-            var guildStash = ingameState.IngameUi.GuildStashElement;
-            if (guildStash?.IsVisible == true && guildStash.VisibleStash != null)
-                foreach (var item in guildStash.VisibleStash.VisibleInventoryItems
-                    .Where(i => i.Item.HasComponent<MapKey>()))
-                    DrawMapBorders(item);
-        }
-        catch { }
 
         // Faustus market
         if (Settings.ShowBorderInFaustus)
