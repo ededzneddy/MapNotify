@@ -33,7 +33,7 @@ Find modifiers at https://www.poewiki.net/wiki/List_of_modifiers_for_maps_(high_
 
 #########################################################################
 
-# MapMods (formerly MapNotify)
+# MapNotify (rererererererelease MapNotify)
 
 An ExileCore plugin for Path of Exile 2 that shows map mod warnings, borders and tooltips when hovering maps in your inventory, stash and market windows.
 
