@@ -1,289 +1,419 @@
-﻿using ExileCore;
+using ExileCore;
 using ExileCore.PoEMemory.Components;
 using ExileCore.PoEMemory.Elements.InventoryElements;
 using ExileCore.Shared.Nodes;
 using ImGuiNET;
+using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
+using nuVector2 = System.Numerics.Vector2;
 using nuVector4 = System.Numerics.Vector4;
 
 namespace MapNotify
 {
     partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
     {
-        public bool debug;
-        public bool maven;
-        public bool comp;
-        public static List<string> hoverMods = new List<string>();
-        public static void HelpMarker(string desc)
+        // ── State ─────────────────────────────────────────────────────────────
+        private string _modSearch     = "";
+        private bool   _confirmDelete = false;
+        private string _deleteTarget  = "";
+        private string _newProfName   = "";
+        private readonly Dictionary<string, bool> _groupOpen = new();
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+        public static List<string> hoverMods = new();
+
+        private static void HelpMarker(string desc)
         {
+            ImGui.SameLine();
             ImGui.TextDisabled("(?)");
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.BeginTooltip();
-                ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35.0f);
-                ImGui.TextUnformatted(desc);
-                ImGui.PopTextWrapPos();
-                ImGui.EndTooltip();
-            }
-        }
-        public static int IntSlider(string labelString, RangeNode<int> setting)
-        {
-            var refValue = setting.Value;
-            ImGui.SliderInt(labelString, ref refValue, setting.Min, setting.Max);
-            return refValue;
+            if (!ImGui.IsItemHovered()) return;
+            ImGui.BeginTooltip();
+            ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35f);
+            ImGui.TextUnformatted(desc);
+            ImGui.PopTextWrapPos();
+            ImGui.EndTooltip();
         }
 
-        public static nuVector4 ColorButton(string labelString, nuVector4 setting)
+        private static bool Toggle(string label, ToggleNode node)
         {
-            var refValue = setting;
-            ImGui.ColorEdit4(labelString, ref refValue, ImGuiColorEditFlags.AlphaPreviewHalf | ImGuiColorEditFlags.AlphaBar);
-            return refValue;
+            var v = node.Value;
+            ImGui.Checkbox(label, ref v);
+            node.Value = v;
+            return v;
         }
 
-        public static bool Checkbox(string labelString, bool boolValue)
+        private static int IntSlider(string label, RangeNode<int> node)
         {
-            ImGui.Checkbox(labelString, ref boolValue);
-            return boolValue;
+            var v = node.Value;
+            ImGui.SliderInt(label, ref v, node.Min, node.Max);
+            return v;
         }
 
-        private string[] excludedFiles = new string[] { "HeistWarnings.txt", "ModWarnings.txt", "SextantWarnings.txt", "WatchstoneWarnings.txt" };
-
-        public string SelectFile()
+        private static void DebugHover()
         {
-            // Get all .txt files in the directory
-            var files = Directory.GetFiles(ConfigDirectory, "*.txt");
-
-            // Filter out the excluded files
-            files = files.Where(f => !excludedFiles.Contains(Path.GetFileName(f))).ToArray();
-
-            // If BadModWarningsLoader.Value is null or empty, set it to the first file in the list
-            if (string.IsNullOrEmpty(Settings.BadModWarningsLoader.Value) && files.Length > 0)
-            {
-                Settings.BadModWarningsLoader.Value = files[0];
-            }
-
-            foreach (var file in files)
-            {
-                if (ImGui.Selectable(file, Settings.BadModWarningsLoader.Value == file))
-                {
-                    var previousValue = Settings.BadModWarningsLoader.Value;
-                    Settings.BadModWarningsLoader.Value = file;
-
-                    // If the value has changed, invoke the OnValueSelected action
-                    if (previousValue != Settings.BadModWarningsLoader.Value)
-                    {
-                        Settings.BadModWarningsLoader.OnValueSelected(Settings.BadModWarningsLoader.Value);
-
-                        // Update the BadModsDictionary
-                        BadModsDictionary = LoadConfigBadMod();
-                    }
-                }
-            }
-
-            // Return the currently selected file
-            return Settings.BadModWarningsLoader.Value;
-        }
-
-        public static void DebugHover()
-        {
-            var uiHover = ingameState.UIHover ?? null;
+            var uiHover = ingameState.UIHover;
             if (uiHover == null || !uiHover.IsVisible) return;
-            var inventoryItemIcon = uiHover?.AsObject<NormalInventoryItem>() ?? null;
-            if (inventoryItemIcon == null) return;
-            var tooltip = inventoryItemIcon?.Tooltip ?? null;
-            var entity = inventoryItemIcon?.Item ?? null;
-            if (tooltip != null && entity.Address != 0 && entity.IsValid)
-            {
-                var modsComponent = entity.GetComponent<Mods>() ?? null;
-                if (modsComponent == null) hoverMods.Clear();
-                else if (modsComponent != null && modsComponent.ItemMods.Count() > 0) 
-                {
-                    hoverMods.Clear();
-                    var itemMods = modsComponent?.ItemMods ?? null;
-                    if (itemMods == null || itemMods.Count == 0)
-                    {
-                        hoverMods.Clear();
-                        return;
-                    }
-                    foreach (var mod in itemMods)
-                    {
-                        if (!hoverMods.Contains($"{mod.RawName} : {mod.Value1}, {mod.Value2}, {mod.Value3}, {mod.Value4}")) 
-                            hoverMods.Add($"{mod.RawName} : {mod.Value1}, {mod.Value2}, {mod.Value3}, {mod.Value4}");
-                    }
-                }
-            } else
-            {
-                hoverMods.Clear();
-            }
+            var icon   = uiHover.AsObject<NormalInventoryItem>();
+            if (icon == null) return;
+            var entity = icon.Item;
+            if (entity == null || entity.Address == 0 || !entity.IsValid) return;
+            var mods = entity.GetComponent<Mods>();
+            if (mods == null) { hoverMods.Clear(); return; }
+            if (mods.ItemMods.Count == 0) { hoverMods.Clear(); return; }
+            hoverMods.Clear();
+            foreach (var mod in mods.ItemMods)
+                hoverMods.Add($"{mod.RawName} : {mod.Value1}, {mod.Value2}, {mod.Value3}, {mod.Value4}");
         }
 
+        // ── Brick pill (custom — kept minimal) ───────────────────────────────
+        private static bool BrickPill(string id, bool bricked)
+        {
+            // Simple colored button — on = red "BRICK", off = grey "brick"
+            if (bricked)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Button,        new nuVector4(0.55f, 0.08f, 0.08f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new nuVector4(0.70f, 0.12f, 0.12f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new nuVector4(0.40f, 0.06f, 0.06f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.Text,          new nuVector4(1.00f, 0.60f, 0.60f, 1f));
+            }
+            else
+            {
+                ImGui.PushStyleColor(ImGuiCol.Button,        new nuVector4(0.14f, 0.14f, 0.18f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new nuVector4(0.22f, 0.22f, 0.28f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new nuVector4(0.10f, 0.10f, 0.14f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.Text,          new nuVector4(0.35f, 0.35f, 0.40f, 1f));
+            }
+            bool clicked = ImGui.SmallButton(bricked ? "BRICK##" + id : "brick##" + id);
+            ImGui.PopStyleColor(4);
+            if (clicked) return !bricked;
+            return bricked;
+        }
+
+        // ── DrawSettings entry point ──────────────────────────────────────────
         public override void DrawSettings()
         {
-            ImGui.Text("Plugin by Lachrymatory. -- Edited by Xcesius https://github.com/Xcesius/MapNotify/");
-            ImGui.Text("Please give suggestions, report issues, etc. below:");
-            if (ImGui.Button("Xcesius's GitHub")) 
-                System.Diagnostics.Process.Start("https://github.com/Xcesius/MapNotify/");
+            // Status line
+            int warnCount  = Settings.EnabledMods.Count(kv => kv.Value);
+            int brickCount = Settings.BrickedMods.Count(kv => kv.Value);
+            ImGui.TextDisabled($"{warnCount} warning{(warnCount != 1 ? "s" : "")}   {brickCount} bricked   |   {Settings.ActiveProfile.Value}");
             ImGui.Separator();
 
+            if (!ImGui.BeginTabBar("##mapmods_tabs")) return;
 
-            if (ImGui.TreeNodeEx("Core Settings", ImGuiTreeNodeFlags.CollapsingHeader))
+            if (ImGui.BeginTabItem("Mods"))    { TabMods();     ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Profiles")){ TabProfiles(); ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Border"))  { TabBorder();   ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Display")) { TabDisplay();  ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Debug"))   { TabDebug();    ImGui.EndTabItem(); }
+
+            ImGui.EndTabBar();
+        }
+
+        // ── Tab: Mods ─────────────────────────────────────────────────────────
+        private void TabMods()
+        {
+            if (_modEntries == null || _modEntries.Count == 0)
             {
-                Settings.InventoryCacheInterval.Value = IntSlider("Inventory Item Caching Interval in ms", Settings.InventoryCacheInterval);
-                ImGui.SameLine(); HelpMarker("This setting is only applied once upon Initialization\nReload the plugin to use the updated setting");
-                Settings.StashCacheInterval.Value = IntSlider("Stash Item Caching Interval in ms", Settings.StashCacheInterval);
-                ImGui.SameLine(); HelpMarker("This setting is only applied once upon Initialization\nReload the plugin to use the updated setting");
-                Settings.AlwaysShowTooltip.Value = Checkbox("Show Tooltip Even Without Warnings", Settings.AlwaysShowTooltip);
-                ImGui.SameLine(); HelpMarker("This will show a tooltip even if there are no mods to warn you about on the map.\nThis means you will always be able to see tier, completion, quantity, mod count, etc.");
-                Settings.HorizontalLines.Value = Checkbox("Show Horizontal Lines", Settings.HorizontalLines);
-                ImGui.SameLine(); HelpMarker("Add a Horizontal Line above actual mod information.");
-                Settings.ShowForZanaMaps.Value = Checkbox("Display for Zana Missions", Settings.ShowForZanaMaps);
-                Settings.ShowLineForZanaMaps.Value = Checkbox("Display Horizontal Line in Zana Missions Info", Settings.ShowLineForZanaMaps);
-                Settings.ShowForWatchstones.Value = Checkbox("Display for Watchstones", Settings.ShowForWatchstones);
-                Settings.ShowForHeist.Value = Checkbox("Display for Contracts and Blueprints", Settings.ShowForHeist);
-                Settings.ShowForInvitations.Value = Checkbox("Display for Maven Invitations", Settings.ShowForInvitations);
-                Settings.AlwaysShowCompletionBorder.Value = Checkbox("Style tooltip border on incomplete maps", Settings.AlwaysShowCompletionBorder);
-                Settings.BoxForBricked.Value = Checkbox("Border on bricked maps in inventory", Settings.BoxForBricked);
-                Settings.BoxForMapWarnings.Value = Checkbox("Border on Map Mod Warnings in inventory and Stash", Settings.BoxForMapWarnings);
-                Settings.BoxForMapBadWarnings.Value = Checkbox("Border on Bad Map Mods in inventory and Stash", Settings.BoxForMapBadWarnings);
-                SelectFile();
-                ImGui.Text($"Bad Mod Warnings File: {Settings.BadModWarningsLoader.Value}");
-               // ImGui.SameLine(); HelpMarker("Add ';true' after a line in the config files to mark it as a bricked mod.");
-
+                ImGui.TextColored(new nuVector4(1f, 0.4f, 0.1f, 1f), "map_mods_data.json not loaded.");
+                return;
             }
 
-            if (ImGui.TreeNodeEx("Map Tooltip Settings", ImGuiTreeNodeFlags.CollapsingHeader))
+            // Search
+            ImGui.Spacing();
+            ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - 60f);
+            ImGui.InputTextWithHint("##ms", "Search mods...", ref _modSearch, 128);
+            ImGui.SameLine();
+            if (ImGui.Button("Clear")) _modSearch = "";
+            ImGui.Spacing();
+
+            var search = _modSearch.Trim().ToLowerInvariant();
+            var grouped = _modEntries
+                .Where(e => string.IsNullOrEmpty(search)
+                    || e.Name.ToLowerInvariant().Contains(search)
+                    || e.Effect.ToLowerInvariant().Contains(search)
+                    || e.ModType.ToLowerInvariant().Contains(search))
+                .GroupBy(e => ModDataLoader.GetGroup(e.ModType))
+                .OrderBy(g => g.Key == "Other" ? "zzz" : g.Key);
+
+            foreach (var group in grouped)
             {
-                Settings.ShowMapName.Value = Checkbox("Show Map Name", Settings.ShowMapName);
-                Settings.ShowCompletion.Value = Checkbox("Show Completion Status", Settings.ShowCompletion);
-                if (Settings.ShowCompletion) Settings.ShowMapName.Value = true;
-                ImGui.SameLine(); HelpMarker("Requires map names.\nDisplays a red letter for each missing completion.\nA for Awakened Completion\nB for Bonus Completion\nC for Completion.");
-                Settings.ShowMapRegion.Value = Checkbox("Show Region Name", Settings.ShowMapRegion);
-                Settings.TargetRegions.Value = Checkbox("Enable Region Targeting ", Settings.TargetRegions);
-                ImGui.SameLine(); HelpMarker("Open the Atlas and tick the regions you want to highlight. Requires Show Region Name.");
-                if (Settings.TargetRegions) Settings.ShowMapRegion.Value = true;
-                Settings.ShowModWarnings.Value = Checkbox("Show Mod Warnings", Settings.ShowModWarnings);
-                ImGui.SameLine(); HelpMarker("Configured in 'ModWarnings.txt' in the plugin folder, created if missing.");
-                Settings.ShowModCount.Value = Checkbox("Show Number of Mods on Map", Settings.ShowModCount);
-                Settings.ShowPackSizePercent.Value = Checkbox("Show Pack Size %", Settings.ShowPackSizePercent);
-                Settings.ShowQuantityPercent.Value = Checkbox("Show Item Quantity %", Settings.ShowQuantityPercent);
-                Settings.ColorQuantityPercent.Value = Checkbox("Warn Below Quantity Percentage", Settings.ColorQuantityPercent);
-                Settings.ColorQuantity.Value = IntSlider("##ColorQuantity", Settings.ColorQuantity);
-                ImGui.SameLine(); HelpMarker("The colour of the quantity text will be red below this amount and green above it.");
-                Settings.NonUnchartedList.Value = Checkbox("Display Maven Boss List for non-uncharted regions", Settings.NonUnchartedList);
-                ImGui.SameLine(); HelpMarker("This will show (up to) all 10 bosses you have slain in a normal region as a full list.\nDisplays a count for normal regions otherwise.");
-            }
-            if (ImGui.TreeNodeEx("Borders and Colours", ImGuiTreeNodeFlags.CollapsingHeader))
-            {
+                int activeInGroup = group.Count(e =>
+                    Settings.EnabledMods.TryGetValue(e.ModType, out var v) && v);
 
-                Settings.MapBorderStyle.Value = Checkbox("Map Item Draw Style", Settings.MapBorderStyle); ImGui.SameLine();
-                ImGui.SameLine(); HelpMarker("Frame = off, Box = on");
+                // TreeNodeEx with OpenOnArrow so clicking a row inside doesn't collapse the group
+                string headerLabel = activeInGroup > 0
+                    ? $"{group.Key}  ({activeInGroup} active)##grp_{group.Key}"
+                    : $"{group.Key}##grp_{group.Key}";
 
-                Settings.BorderDeflation.Value = IntSlider("Map Border Deflation##MapBorderDeflation", Settings.BorderDeflation);
-                Settings.BorderThickness.Value = IntSlider("Border Thickness##BorderThickness", Settings.BorderThickness);
-                Settings.BorderThickness.Value = IntSlider("Completion Border Thickness##BorderThickness", Settings.BorderThickness);
+                if (!_groupOpen.ContainsKey(group.Key))
+                    _groupOpen[group.Key] = false;
+                bool open = _groupOpen[group.Key];
 
-                Settings.DefaultBorderTextColor = ColorButton("Text colour for maps with borders", Settings.DefaultBorderTextColor);
-                Settings.StyleTextForBorder.Value = Checkbox("Use border colour for text colour", Settings.StyleTextForBorder);
-                ImGui.SameLine(); HelpMarker("i.e. if you have Harvest in green, 'Harvest' will be written in green in the tooltip.");
+                // Draw header as a button so clicks only toggle, never conflict with children
+                ImGui.PushStyleColor(ImGuiCol.Button,        new nuVector4(0.15f, 0.15f, 0.18f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new nuVector4(0.20f, 0.20f, 0.25f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new nuVector4(0.12f, 0.12f, 0.15f, 1f));
+                ImGui.PushStyleVar(ImGuiStyleVar.ButtonTextAlign, new nuVector2(0f, 0.5f));
+                string arrow = open ? "v " : "> ";
+                if (ImGui.Button(arrow + headerLabel, new nuVector2(ImGui.GetContentRegionAvail().X, 0)))
+                    _groupOpen[group.Key] = !open;
+                ImGui.PopStyleVar();
+                ImGui.PopStyleColor(3);
+                if (!open) continue;
 
-                Settings.ElderGuardianBorder.Value = Checkbox("##elder", Settings.ElderGuardianBorder); ImGui.SameLine();
-                Settings.ElderGuardian = ColorButton("Elder Guardian", Settings.ElderGuardian);
-
-                Settings.ShaperGuardianBorder.Value = Checkbox("##shaper", Settings.ShaperGuardianBorder); ImGui.SameLine();
-                Settings.ShaperGuardian = ColorButton("Shaper Guardian", Settings.ShaperGuardian);
-
-                Settings.HarvestBorder.Value = Checkbox("##harvest", Settings.HarvestBorder); ImGui.SameLine();
-                Settings.Harvest = ColorButton("Harvest", Settings.Harvest);
-
-                Settings.DeliriumBorder.Value = Checkbox("##delirium", Settings.DeliriumBorder); ImGui.SameLine();
-                Settings.Delirium = ColorButton("Delirium", Settings.Delirium);
-
-                Settings.BlightedBorder.Value = Checkbox("##blighted", Settings.BlightedBorder); ImGui.SameLine();
-                Settings.Blighted = ColorButton("Blighted Map", Settings.Blighted);
-
-                Settings.BlightEncounterBorder.Value = Checkbox("##blightenc", Settings.BlightEncounterBorder); ImGui.SameLine();
-                Settings.BlightEncounter = ColorButton("Blight in normal map", Settings.BlightEncounter);
-
-                Settings.MetamorphBorder.Value = Checkbox("##metamorph", Settings.MetamorphBorder); ImGui.SameLine();
-                Settings.Metamorph = ColorButton("Metamorph", Settings.Metamorph);
-
-                Settings.LegionBorder.Value = Checkbox("##legion", Settings.LegionBorder); ImGui.SameLine();
-                Settings.Legion = ColorButton("Legion Monolith", Settings.Legion);
-
-                Settings.CompletionBorder.Value = Checkbox("Show borders for lack of completion##completion", Settings.CompletionBorder); 
-                Settings.Incomplete = ColorButton("Incomplete", Settings.Incomplete);
-                Settings.BonusIncomplete = ColorButton("Bonus Incomplete", Settings.BonusIncomplete);
-                Settings.AwakenedIncomplete = ColorButton("Awakened Incomplete", Settings.AwakenedIncomplete);
-
-                Settings.Bricked = ColorButton("Bricked Map", Settings.Bricked);
-                Settings.MapBorderWarnings = ColorButton("Show MapWarningBorder", Settings.MapBorderWarnings);
-                Settings.MapBorderBad = ColorButton("Show BadMapBorder", Settings.MapBorderBad);
-                Settings.MapQuantSetting.Value = IntSlider("##MapQuantSetting", Settings.MapQuantSetting);
-                Settings.MapPackSetting.Value = IntSlider("##MapPackSetting", Settings.MapPackSetting);
-                Settings.BorderThicknessMap.Value = IntSlider("Border Thickness for maps##BorderThickness Maps", Settings.BorderThicknessMap);
-            }
-            
-            if (ImGui.TreeNodeEx("Config Files and Other", ImGuiTreeNodeFlags.CollapsingHeader))
-            {
-                if (ImGui.Button("Reload Warnings Text Files")) { WarningDictionary = LoadConfigs(); BadModsDictionary = LoadConfigBadMod(); }
-                if (ImGui.Button("Recreate Default Warnings Text Files")) ResetConfigs();
-                ImGui.SameLine(); HelpMarker("This will irreversibly delete all your existing warnings config files!");
-                Settings.PadForNinjaPricer.Value = Checkbox("Pad for Ninja Pricer", Settings.PadForNinjaPricer);
-                ImGui.SameLine(); HelpMarker("This will move the tooltip down vertically to allow room for the Ninja Pricer tooltip to be rendered. Only needed with that plugin active.");
-                Settings.PadForNinjaPricer2.Value = Checkbox("More Pad for Ninja Pricer", Settings.PadForNinjaPricer2);
-                ImGui.SameLine(); HelpMarker("This will move the tooltip down vertically to allow room for the Ninja Pricer tooltip to be rendered. Only needed with that plugin active.");
-                Settings.PadForAltPricer.Value = Checkbox("Pad for Personal Pricer", Settings.PadForAltPricer);
-                ImGui.SameLine(); HelpMarker("It's unlikely you'll need this.");
-                ImGui.Spacing();
-                               
-                debug = Checkbox("Debug Features", debug);
-                ImGui.SameLine(); HelpMarker("Show mod names for quickly adding them to your ModWarnings.txt\nYou only need the start of a mod to match it, for example: 'MapBloodlinesModOnMagicsMapWorlds' would be matched with:\nMapBloodlines;Bloodlines;FF7F00FF");
-                if (debug)
+                foreach (var entry in group)
                 {
-                    maven = Checkbox("Maven Debug", maven);
-                    if (maven)
-                    {
-                        ImGui.Text("Maven Witnessed:");
-                        foreach (var map in ingameState.ServerData.MavenWitnessedAreas)
-                        {
-                            ImGui.TextColored(new nuVector4(0.5F, 0.5F, 1.2F, 1F), $"{map.Name}");
-                        }
-                        ImGui.Text("Maven Regions:");
-                        foreach (var region in MavenDict)
-                        {
+                    bool isEnabled = Settings.EnabledMods.TryGetValue(entry.ModType, out var en) && en;
+                    bool isBricked = isEnabled && Settings.BrickedMods.TryGetValue(entry.ModType, out var br) && br;
 
-                            ImGui.TextColored(new nuVector4(0.5F, 0.5F, 1.2F, 1F), $"{region.Key}");
-                            ImGui.SameLine();
-                            ImGui.TextColored(new nuVector4(1.2F, 0.5F, 0.5F, 1F), $"{region.Value}");
-                        }
-                    }
-                    comp = Checkbox("Completion Debug", comp);
-                    
-                    if (comp)
-                    {
-                        ImGui.Text($"Bonus ({ingameState.ServerData.BonusCompletedAreas.Count}): ");
-                        foreach (var map in ingameState.ServerData.BonusCompletedAreas)
-                        {
-                            ImGui.TextColored(new nuVector4(0.5F, 0.5F, 1.2F, 1F), $"{map.Name}");
-                        }
-                        ImGui.Text($"Completion ({ingameState.ServerData.CompletedAreas.Count}): ");
-                        foreach (var map in ingameState.ServerData.CompletedAreas)
-                        {
-                            ImGui.TextColored(new nuVector4(0.5F, 0.5F, 1.2F, 1F), $"{map.Name}");
-                        }
-                    }
-                    DebugHover();
-                    ImGui.Text("Last Hovered item's mods:");
-                    if (hoverMods.Count > 0)
-                        foreach (var mod in hoverMods)
-                        {
-                            ImGui.TextColored(new nuVector4(0.5F, 0.5F, 1.2F, 1F), mod);
-                        }
+                    // Highlight row if active
+                    if (isBricked)
+                        ImGui.PushStyleColor(ImGuiCol.Header, new nuVector4(0.45f, 0.06f, 0.06f, 0.5f));
+                    else if (isEnabled)
+                        ImGui.PushStyleColor(ImGuiCol.Header, new nuVector4(0.45f, 0.18f, 0.06f, 0.35f));
 
+                    // Fixed-height selectable — 34px fits two lines cleanly
+                    float lineH = ImGui.GetTextLineHeight();
+                    float rowH  = lineH * 2f + 8f;
+                    float availW = ImGui.GetContentRegionAvail().X;
+                    float selectW = isEnabled ? availW - 60f : availW;
+
+                    ImGui.SetNextItemAllowOverlap();
+                    bool rowClicked = ImGui.Selectable(
+                        $"##sel_{entry.ModType}",
+                        isEnabled || isBricked,
+                        ImGuiSelectableFlags.DontClosePopups,
+                        new nuVector2(selectW, rowH));
+
+                    if (isBricked || isEnabled) ImGui.PopStyleColor();
+
+                    if (rowClicked)
+                    {
+                        if (isEnabled)
+                        {
+                            Settings.EnabledMods[entry.ModType] = false;
+                            Settings.BrickedMods.Remove(entry.ModType);
+                        }
+                        else
+                            Settings.EnabledMods[entry.ModType] = true;
+                    }
+
+                    // Overlay text — positioned within the selectable bounds
+                    var selMin = ImGui.GetItemRectMin();
+                    var dl = ImGui.GetWindowDrawList();
+                    var nameCol = isBricked
+                        ? new nuVector4(1f, 0.50f, 0.50f, 1f)
+                        : isEnabled
+                            ? new nuVector4(0.90f, 0.90f, 0.90f, 1f)
+                            : new nuVector4(0.65f, 0.65f, 0.68f, 1f);
+                    dl.AddText(selMin + new nuVector2(4f, 3f),
+                        ImGui.GetColorU32(nameCol), entry.Name);
+                    dl.AddText(selMin + new nuVector2(4f, 3f + lineH),
+                        ImGui.GetColorU32(new nuVector4(0.32f, 0.32f, 0.36f, 1f)),
+                        entry.Effect.Length > 100 ? entry.Effect[..100] + "..." : entry.Effect);
+
+                    // Brick button — same line after selectable
+                    if (isEnabled)
+                    {
+                        ImGui.SameLine();
+                        bool newBrick = BrickPill(entry.ModType, isBricked);
+                        if (newBrick != isBricked)
+                            Settings.BrickedMods[entry.ModType] = newBrick;
+                    }
+                }
+                ImGui.Spacing();
+            }
+        }
+
+        // ── Tab: Profiles ─────────────────────────────────────────────────────
+        private void TabProfiles()
+        {
+            var pm = _profileManager;
+            if (pm == null) { ImGui.TextDisabled("Profile manager not initialised."); return; }
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Active: " + Settings.ActiveProfile.Value);
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            foreach (var name in pm.ProfileNames)
+            {
+                bool isActive = name == Settings.ActiveProfile.Value;
+
+                if (isActive)
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Text, new nuVector4(1f, 0.65f, 0.2f, 1f));
+                    ImGui.TextUnformatted(">> " + name);
+                    ImGui.PopStyleColor();
+                }
+                else
+                {
+                    ImGui.TextUnformatted("   " + name);
+                }
+
+                ImGui.SameLine(200f);
+
+                // Load button (acts as activate)
+                if (!isActive)
+                {
+                    if (ImGui.SmallButton($"Load##{name}"))
+                    {
+                        pm.LoadProfile(name, Settings);
+                        Settings.ActiveProfile.Value = name;
+                    }
+                    ImGui.SameLine();
+                }
+
+                if (ImGui.SmallButton($"Save##{name}"))
+                    pm.SaveProfile(name, Settings);
+                HelpMarker("Overwrites this profile with current mod selections");
+
+                if (name != "Default")
+                {
+                    ImGui.SameLine();
+                    ImGui.PushStyleColor(ImGuiCol.Text, new nuVector4(0.75f, 0.2f, 0.2f, 1f));
+                    if (ImGui.SmallButton($"Del##{name}"))
+                    { _confirmDelete = true; _deleteTarget = name; }
+                    ImGui.PopStyleColor();
+                }
+
+                ImGui.Separator();
+            }
+
+            if (_confirmDelete)
+            {
+                ImGui.Spacing();
+                ImGui.TextColored(new nuVector4(1f, 0.3f, 0.3f, 1f), $"Delete \"{_deleteTarget}\"?");
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Yes"))
+                {
+                    if (Settings.ActiveProfile.Value == _deleteTarget)
+                    { pm.LoadProfile("Default", Settings); Settings.ActiveProfile.Value = "Default"; }
+                    pm.DeleteProfile(_deleteTarget);
+                    _confirmDelete = false; _deleteTarget = "";
+                }
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Cancel##cxd")) { _confirmDelete = false; _deleteTarget = ""; }
+                ImGui.Spacing();
+            }
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.TextDisabled("New profile");
+            ImGui.SetNextItemWidth(180f);
+            ImGui.InputTextWithHint("##np", "Profile name...", ref _newProfName, 64);
+            ImGui.SameLine();
+            bool canCreate = !string.IsNullOrWhiteSpace(_newProfName)
+                             && !pm.Profiles.ContainsKey(_newProfName);
+            if (!canCreate) ImGui.BeginDisabled();
+            if (ImGui.SmallButton("Create"))
+            {
+                pm.SaveProfile(_newProfName, Settings);
+                Settings.ActiveProfile.Value = _newProfName;
+                _newProfName = "";
+            }
+            if (!canCreate) ImGui.EndDisabled();
+        }
+
+        // ── Tab: Border ───────────────────────────────────────────────────────
+        private void TabBorder()
+        {
+            ImGui.Spacing();
+            ImGui.TextDisabled("Enable Borders");
+            ImGui.Separator();
+            Toggle("Warning mods border", Settings.BoxForMapWarnings);
+            Toggle("Bricked mods border", Settings.BoxForMapBadWarnings);
+            Toggle("Use Box style (off = Frame)", Settings.MapBorderStyle);
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Colors");
+            ImGui.Separator();
+            Settings.MapBorderWarnings = ColorEdit("Warning color##wc", Settings.MapBorderWarnings);
+            Settings.Bricked           = ColorEdit("Bricked color##bc", Settings.Bricked);
+            Settings.EightModBorder    = ColorEdit("8-Mod color##ec",   Settings.EightModBorder);
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Size");
+            ImGui.Separator();
+            Settings.BorderDeflation.Value    = IntSlider("Deflation##bd",  Settings.BorderDeflation);
+            Settings.BorderThicknessMap.Value = IntSlider("Thickness##bt",  Settings.BorderThicknessMap);
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Quantity / Pack Size Thresholds");
+            ImGui.Separator();
+            ImGui.TextDisabled("Text turns red below these values.");
+            Settings.MapQuantSetting.Value = IntSlider("Quantity##qt",  Settings.MapQuantSetting);
+            Settings.MapPackSetting.Value  = IntSlider("Pack size##ps", Settings.MapPackSetting);
+        }
+
+        private static nuVector4 ColorEdit(string label, nuVector4 value)
+        {
+            ImGui.ColorEdit4(label, ref value,
+                ImGuiColorEditFlags.AlphaPreviewHalf | ImGuiColorEditFlags.AlphaBar);
+            return value;
+        }
+
+        // ── Tab: Display ──────────────────────────────────────────────────────
+        private void TabDisplay()
+        {
+            ImGui.Spacing();
+            ImGui.TextDisabled("Tooltip");
+            ImGui.Separator();
+            Toggle("Always show tooltip",        Settings.AlwaysShowTooltip);
+            HelpMarker("Shows tooltip even when there are no warnings");
+            Toggle("Show mod warnings",          Settings.ShowModWarnings);
+            Toggle("Show mod count",             Settings.ShowModCount);
+            Toggle("Show quantity %",            Settings.ShowQuantityPercent);
+            Toggle("Show pack size %",           Settings.ShowPackSizePercent);
+            Toggle("Horizontal separator lines", Settings.HorizontalLines);
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Windows");
+            ImGui.Separator();
+            Toggle("Show border in Faustus market", Settings.ShowBorderInFaustus);
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Quantity Color");
+            ImGui.Separator();
+            ImGui.TextDisabled("Turns red below threshold, green above.");
+            Toggle("Enable quantity color", Settings.ColorQuantityPercent);
+            Settings.ColorQuantity.Value = IntSlider("Threshold##cq", Settings.ColorQuantity);
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Cache Intervals");
+            ImGui.Separator();
+            ImGui.TextDisabled("Reload plugin after changing.");
+            Settings.InventoryCacheInterval.Value = IntSlider("Inventory (ms)##ic", Settings.InventoryCacheInterval);
+            Settings.StashCacheInterval.Value     = IntSlider("Stash (ms)##sc",     Settings.StashCacheInterval);
+        }
+
+        // ── Tab: Debug ────────────────────────────────────────────────────────
+        private void TabDebug()
+        {
+            ImGui.Spacing();
+            ImGui.TextDisabled("Hover a map in inventory to see its raw mod names.");
+            ImGui.TextDisabled("Use these to add entries to map_mods_data.json.");
+            ImGui.Separator();
+            ImGui.Spacing();
+            DebugHover();
+            if (hoverMods.Count > 0)
+            {
+                if (ImGui.Button("Copy All"))
+                    ImGui.SetClipboardText(string.Join(Environment.NewLine, hoverMods));
+                ImGui.Spacing();
+                foreach (var mod in hoverMods)
+                {
+                    ImGui.TextColored(new nuVector4(1f, 0.45f, 0.1f, 1f), mod);
+                    ImGui.SameLine();
+                    ImGui.PushStyleColor(ImGuiCol.Text, new nuVector4(0.4f, 0.4f, 0.45f, 1f));
+                    if (ImGui.SmallButton($"Copy##{mod}"))
+                        ImGui.SetClipboardText(mod.Split(' ')[0]); // copies just the RawName
+                    ImGui.PopStyleColor();
                 }
             }
+            else
+                ImGui.TextDisabled("(no map item hovered)");
         }
     }
 }
