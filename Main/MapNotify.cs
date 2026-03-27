@@ -106,6 +106,10 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
 
             if (!entity.HasComponent<MapKey>()) return;
 
+            // Only show tooltip for Magic, Rare and Unique maps
+            var rarity = entity.GetComponent<Mods>()?.ItemRarity;
+            if (rarity == null || rarity == ItemRarity.Normal || rarity == ItemRarity.Unique) return;
+
             var ItemDetails = Entity.GetHudComponent<ItemDetails>();
             if (ItemDetails == null)
             {
