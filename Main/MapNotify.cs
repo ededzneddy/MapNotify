@@ -40,7 +40,9 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
         var result = new List<NormalInventoryItem>();
         if (ingameState.IngameUi.InventoryPanel.IsVisible)
         {
-            result.AddRange(ingameState.IngameUi.InventoryPanel[InventoryIndex.PlayerInventory].VisibleInventoryItems.Where(item => item.Item.HasComponent<MapKey>()));
+            var items = ingameState.IngameUi.InventoryPanel[InventoryIndex.PlayerInventory].VisibleInventoryItems;
+            if (items != null)
+                result.AddRange(items.Where(item => item?.Item != null && item.Item.HasComponent<MapKey>()));
         }
 
         return result;
@@ -53,7 +55,9 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
         if (ingameState.IngameUi.StashElement.IsVisible && ingameState.IngameUi.StashElement.VisibleStash != null)
         {
             stashIndex = ingameState.IngameUi.StashElement.IndexVisibleStash;
-            result.AddRange(ingameState.IngameUi.StashElement.VisibleStash.VisibleInventoryItems.Where(item => item.Item.HasComponent<MapKey>()));
+            var items = ingameState.IngameUi.StashElement.VisibleStash.VisibleInventoryItems;
+            if (items != null)
+                result.AddRange(items.Where(item => item?.Item != null && item.Item.HasComponent<MapKey>()));
         }
 
         return (stashIndex, result);
