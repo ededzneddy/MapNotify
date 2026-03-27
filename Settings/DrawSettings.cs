@@ -386,6 +386,12 @@ namespace MapNotify
             ImGui.TextDisabled("Reload plugin after changing.");
             Settings.InventoryCacheInterval.Value = IntSlider("Inventory (ms)##ic", Settings.InventoryCacheInterval);
             Settings.StashCacheInterval.Value     = IntSlider("Stash (ms)##sc",     Settings.StashCacheInterval);
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Tooltip Position");
+            ImGui.Separator();
+            Settings.TooltipOffsetX.Value = IntSlider("Horizontal offset##tx", Settings.TooltipOffsetX);
+            Settings.TooltipOffsetY.Value = IntSlider("Vertical offset##ty",   Settings.TooltipOffsetY);
         }
 
         // ── Tab: Debug ────────────────────────────────────────────────────────
