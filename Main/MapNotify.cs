@@ -128,7 +128,7 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
             }
             if (Settings.AlwaysShowTooltip || ItemDetails.ActiveWarnings.Count > 0)
             {
-                var boxOrigin = new nuVector2(MouseLite.GetCursorPositionVector().X + 50, MouseLite.GetCursorPositionVector().Y);
+                var boxOrigin = new nuVector2(MouseLite.GetCursorPositionVector().X + 50, MouseLite.GetCursorPositionVector().Y + 80);
 
                 var _opened = true;
                 pushedColors += 1;
