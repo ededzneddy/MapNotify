@@ -22,6 +22,8 @@ namespace MapNotify
         public ToggleNode AlwaysShowTooltip     { get; set; } = new(true);
         public ToggleNode ShowModWarnings       { get; set; } = new(true);
         public ToggleNode HorizontalLines       { get; set; } = new(true);
+        public RangeNode<int> TooltipOffsetX { get; set; } = new(25, 0, 300);
+        public RangeNode<int> TooltipOffsetY { get; set; } = new(0, -200, 200);
 
         // Border
         public ToggleNode MapBorderStyle        { get; set; } = new(false);
