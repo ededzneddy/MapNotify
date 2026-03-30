@@ -17,6 +17,9 @@ namespace MapNotify
         public ToggleNode ShowModCount          { get; set; } = new(true);
         public ToggleNode ShowQuantityPercent   { get; set; } = new(true);
         public ToggleNode ShowPackSizePercent   { get; set; } = new(true);
+        public ToggleNode ShowCurrencyPercent   { get; set; } = new(true);
+        public ToggleNode ShowScarabPercent     { get; set; } = new(true);
+        public ToggleNode ShowMapDropPercent    { get; set; } = new(true);
         public ToggleNode ColorQuantityPercent  { get; set; } = new(true);
         public RangeNode<int> ColorQuantity     { get; set; } = new(100, 0, 220);
         public ToggleNode AlwaysShowTooltip     { get; set; } = new(true);
@@ -32,8 +35,10 @@ namespace MapNotify
         public RangeNode<int> MapPackSetting    { get; set; } = new(100, 0, 220);
         public ToggleNode BoxForMapWarnings     { get; set; } = new(true);
         public ToggleNode BoxForMapBadWarnings  { get; set; } = new(true);
+        public ToggleNode BoxForMapGoodMods     { get; set; } = new(true);
         public Vector4 Bricked                  { get; set; } = new(1f, 0f, 0f, 1f);
-        public Vector4 MapBorderWarnings        { get; set; } = new(0f, 1f, 0f, 1f);
+        public Vector4 MapBorderWarnings        { get; set; } = new(0f, 0.6f, 1f, 1f);
+        public Vector4 GoodModBorder            { get; set; } = new(0f, 1f, 0f, 1f);
         public Vector4 EightModBorder           { get; set; } = new(1f, 0.65f, 0f, 1f);
         public RangeNode<int> BorderThicknessMap{ get; set; } = new(2, 1, 6);
 
@@ -51,6 +56,9 @@ namespace MapNotify
 
         // Which enabled mods are considered bricked (overrides warning color with bricked color)
         public Dictionary<string, bool> BrickedMods { get; set; } = new();
+
+        // Which enabled mods are considered good (shows good color border — priority below bricked)
+        public Dictionary<string, bool> GoodMods { get; set; } = new();
 
         // User-defined display names for mods (overrides default Name from JSON)
         public Dictionary<string, string> CustomModNames { get; set; } = new();
