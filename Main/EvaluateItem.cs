@@ -66,6 +66,9 @@ namespace MapNotify
             public string ClassID { get; set; }
             public int PackSize { get; set; }
             public int Quantity { get; set; }
+            public int Currency { get; set; }
+            public int Scarabs  { get; set; }
+            public int MapDrop  { get; set; }
             public int ModCount { get; set; }
             public bool NeedsPadding { get; set; }
             public bool Bricked { get; set; }
@@ -81,6 +84,9 @@ namespace MapNotify
 
                 var packSize = 0;
                 var quantity = Entity.GetComponent<Quality>()?.ItemQuality ?? 0;
+                var currency = 0;
+                var scarabs  = 0;
+                var mapDrop  = 0;
                 var settings = MapNotify.LiveSettings ?? new MapNotifySettings();
                 var mapComponent = Entity.GetComponent<MapKey>() ?? null;
                 Tier = mapComponent?.Tier ?? -1;
@@ -121,8 +127,11 @@ namespace MapNotify
 
                             realModCount++;
 
-                            UpdateValueIfStatExists("map_pack_size_+%", x => packSize += x);
-                            UpdateValueIfStatExists("map_item_drop_quantity_+%", x => quantity += x);
+                            UpdateValueIfStatExists("map_pack_size_+%",                          x => packSize += x);
+                            UpdateValueIfStatExists("map_item_drop_quantity_+%",                  x => quantity += x);
+                            UpdateValueIfStatExists("map_currency_drop_chance_+%_final_from_uber_mod", x => currency += x);
+                            UpdateValueIfStatExists("map_scarab_drop_chance_+%_final_from_uber_mod",   x => scarabs  += x);
+                            UpdateValueIfStatExists("map_map_item_drop_chance_+%_final_from_uber_mod", x => mapDrop  += x);
 
                             // Profile-driven warnings
                             if (MapNotify.LiveSettings?.EnabledMods != null && MapNotify._modEntries != null)
@@ -137,14 +146,23 @@ namespace MapNotify
                                         continue;
 
                                     bool isBricked = MapNotify.LiveSettings.BrickedMods.TryGetValue(entry.ModType, out var br) && br;
+                                    bool isGood    = !isBricked && (MapNotify.LiveSettings.GoodMods?.TryGetValue(entry.ModType, out var gd) == true && gd);
                                     if (isBricked) Bricked = true;
+
+                                    // Pull colors from settings so tooltip always matches border colors
+                                    var s = MapNotify.LiveSettings;
+                                    SharpDX.Vector4 textColor;
+                                    if (isBricked)
+                                        textColor = new SharpDX.Vector4(s.Bricked.X, s.Bricked.Y, s.Bricked.Z, s.Bricked.W);
+                                    else if (isGood)
+                                        textColor = new SharpDX.Vector4(s.GoodModBorder.X, s.GoodModBorder.Y, s.GoodModBorder.Z, s.GoodModBorder.W);
+                                    else
+                                        textColor = new SharpDX.Vector4(s.MapBorderWarnings.X, s.MapBorderWarnings.Y, s.MapBorderWarnings.Z, s.MapBorderWarnings.W);
 
                                     ActiveWarnings.Add(new StyledText
                                     {
                                         Text     = entry.Name,
-                                        Color    = isBricked
-                                            ? new SharpDX.Vector4(1f, 0.20f, 0.20f, 1f)   // red for bricked
-                                            : new SharpDX.Vector4(1f, 0.60f, 0.10f, 1f),  // orange for warning
+                                        Color    = textColor,
                                         Bricking = isBricked
                                     });
                                 }
@@ -169,6 +187,9 @@ namespace MapNotify
 
                     Quantity = quantity;
                     PackSize = packSize;
+                    Currency = currency;
+                    Scarabs  = scarabs;
+                    MapDrop  = mapDrop;
 
                     if (ClassID.Contains("MapFragment"))
                     {
