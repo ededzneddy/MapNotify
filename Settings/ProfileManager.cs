@@ -13,6 +13,7 @@ namespace MapNotify
         public DateTime LastSaved               { get; set; } = DateTime.UtcNow;
         public Dictionary<string, bool> Mods   { get; set; } = new();
         public Dictionary<string, bool> Bricked { get; set; } = new();
+        public Dictionary<string, bool> Good    { get; set; } = new();
         public Dictionary<string, string> CustomNames { get; set; } = new();
     }
 
@@ -67,9 +68,10 @@ namespace MapNotify
             var p = Profiles.GetValueOrDefault(name) ?? new MapNotifyProfile();
             p.Name      = name;
             p.LastSaved = DateTime.UtcNow;
-            p.Mods      = new Dictionary<string, bool>(s.EnabledMods);
-            p.Bricked      = new Dictionary<string, bool>(s.BrickedMods);
-            p.CustomNames  = new Dictionary<string, string>(s.CustomModNames);
+            p.Mods        = new Dictionary<string, bool>(s.EnabledMods);
+            p.Bricked     = new Dictionary<string, bool>(s.BrickedMods);
+            p.Good        = new Dictionary<string, bool>(s.GoodMods);
+            p.CustomNames = new Dictionary<string, string>(s.CustomModNames);
             Profiles[name] = p;
             Save();
         }
@@ -77,9 +79,10 @@ namespace MapNotify
         public bool LoadProfile(string name, MapNotifySettings s)
         {
             if (!Profiles.TryGetValue(name, out var p)) return false;
-            s.EnabledMods = new Dictionary<string, bool>(p.Mods);
-            s.BrickedMods     = new Dictionary<string, bool>(p.Bricked ?? new Dictionary<string, bool>());
-            s.CustomModNames  = new Dictionary<string, string>(p.CustomNames ?? new Dictionary<string, string>());
+            s.EnabledMods    = new Dictionary<string, bool>(p.Mods);
+            s.BrickedMods    = new Dictionary<string, bool>(p.Bricked ?? new());
+            s.GoodMods       = new Dictionary<string, bool>(p.Good    ?? new());
+            s.CustomModNames = new Dictionary<string, string>(p.CustomNames ?? new());
             return true;
         }
 
@@ -97,9 +100,10 @@ namespace MapNotify
             {
                 Name      = newName,
                 LastSaved = DateTime.UtcNow,
-                Mods      = new Dictionary<string, bool>(src.Mods),
-                Bricked      = new Dictionary<string, bool>(src.Bricked ?? new Dictionary<string, bool>()),
-                CustomNames  = new Dictionary<string, string>(src.CustomNames ?? new Dictionary<string, string>())
+                Mods        = new Dictionary<string, bool>(src.Mods),
+                Bricked     = new Dictionary<string, bool>(src.Bricked ?? new()),
+                Good        = new Dictionary<string, bool>(src.Good    ?? new()),
+                CustomNames = new Dictionary<string, string>(src.CustomNames ?? new())
             };
             Save();
         }
