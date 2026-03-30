@@ -90,13 +90,37 @@ namespace MapNotify
             return bricked;
         }
 
+        // ── Good pill ─────────────────────────────────────────────────────────
+        private static bool GoodPill(string id, bool good)
+        {
+            if (good)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Button,        new nuVector4(0.05f, 0.35f, 0.55f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new nuVector4(0.08f, 0.48f, 0.72f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new nuVector4(0.03f, 0.25f, 0.40f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.Text,          new nuVector4(0.50f, 0.85f, 1.00f, 1f));
+            }
+            else
+            {
+                ImGui.PushStyleColor(ImGuiCol.Button,        new nuVector4(0.14f, 0.14f, 0.18f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new nuVector4(0.22f, 0.22f, 0.28f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new nuVector4(0.10f, 0.10f, 0.14f, 1f));
+                ImGui.PushStyleColor(ImGuiCol.Text,          new nuVector4(0.35f, 0.35f, 0.40f, 1f));
+            }
+            bool clicked = ImGui.SmallButton(good ? "GOOD##" + id : "good##" + id);
+            ImGui.PopStyleColor(4);
+            if (clicked) return !good;
+            return good;
+        }
+
         // ── DrawSettings entry point ──────────────────────────────────────────
         public override void DrawSettings()
         {
             // Status line
             int warnCount  = Settings.EnabledMods.Count(kv => kv.Value);
             int brickCount = Settings.BrickedMods.Count(kv => kv.Value);
-            ImGui.TextDisabled($"{warnCount} warning{(warnCount != 1 ? "s" : "")}   {brickCount} bricked   |   {Settings.ActiveProfile.Value}");
+            int goodCount  = Settings.GoodMods.Count(kv => kv.Value);
+            ImGui.TextDisabled($"{warnCount} warnings   {brickCount} bricked   {goodCount} good   |   {Settings.ActiveProfile.Value}");
             ImGui.Separator();
 
             if (!ImGui.BeginTabBar("##mapmods_tabs")) return;
@@ -166,10 +190,13 @@ namespace MapNotify
                 {
                     bool isEnabled = Settings.EnabledMods.TryGetValue(entry.ModType, out var en) && en;
                     bool isBricked = isEnabled && Settings.BrickedMods.TryGetValue(entry.ModType, out var br) && br;
+                    bool isGood    = isEnabled && Settings.GoodMods.TryGetValue(entry.ModType, out var gd) && gd;
 
-                    // Highlight row if active
+                    // Highlight row if active — bricked > good > warning
                     if (isBricked)
                         ImGui.PushStyleColor(ImGuiCol.Header, new nuVector4(0.45f, 0.06f, 0.06f, 0.5f));
+                    else if (isGood)
+                        ImGui.PushStyleColor(ImGuiCol.Header, new nuVector4(0.05f, 0.25f, 0.45f, 0.5f));
                     else if (isEnabled)
                         ImGui.PushStyleColor(ImGuiCol.Header, new nuVector4(0.45f, 0.18f, 0.06f, 0.35f));
 
@@ -177,16 +204,16 @@ namespace MapNotify
                     float lineH = ImGui.GetTextLineHeight();
                     float rowH  = lineH * 2f + 8f;
                     float availW = ImGui.GetContentRegionAvail().X;
-                    float selectW = isEnabled ? availW - 60f : availW;
+                    float selectW = isEnabled ? availW - 110f : availW;
 
                     ImGui.SetNextItemAllowOverlap();
                     bool rowClicked = ImGui.Selectable(
                         $"##sel_{entry.ModType}",
-                        isEnabled || isBricked,
+                        isEnabled || isBricked || isGood,
                         ImGuiSelectableFlags.DontClosePopups,
                         new nuVector2(selectW, rowH));
 
-                    if (isBricked || isEnabled) ImGui.PopStyleColor();
+                    if (isBricked || isGood || isEnabled) ImGui.PopStyleColor();
 
                     if (rowClicked)
                     {
@@ -194,6 +221,7 @@ namespace MapNotify
                         {
                             Settings.EnabledMods[entry.ModType] = false;
                             Settings.BrickedMods.Remove(entry.ModType);
+                            Settings.GoodMods.Remove(entry.ModType);
                         }
                         else
                             Settings.EnabledMods[entry.ModType] = true;
@@ -204,22 +232,34 @@ namespace MapNotify
                     var dl = ImGui.GetWindowDrawList();
                     var nameCol = isBricked
                         ? new nuVector4(1f, 0.50f, 0.50f, 1f)
-                        : isEnabled
-                            ? new nuVector4(0.90f, 0.90f, 0.90f, 1f)
-                            : new nuVector4(0.65f, 0.65f, 0.68f, 1f);
+                        : isGood
+                            ? new nuVector4(0.50f, 0.85f, 1.00f, 1f)
+                            : isEnabled
+                                ? new nuVector4(0.90f, 0.90f, 0.90f, 1f)
+                                : new nuVector4(0.65f, 0.65f, 0.68f, 1f);
                     dl.AddText(selMin + new nuVector2(4f, 3f),
                         ImGui.GetColorU32(nameCol), entry.Name);
                     dl.AddText(selMin + new nuVector2(4f, 3f + lineH),
                         ImGui.GetColorU32(new nuVector4(0.32f, 0.32f, 0.36f, 1f)),
                         entry.Effect.Length > 100 ? entry.Effect[..100] + "..." : entry.Effect);
 
-                    // Brick button — same line after selectable
+                    // Brick + Good buttons — same line after selectable
                     if (isEnabled)
                     {
                         ImGui.SameLine();
                         bool newBrick = BrickPill(entry.ModType, isBricked);
                         if (newBrick != isBricked)
+                        {
                             Settings.BrickedMods[entry.ModType] = newBrick;
+                            if (newBrick) Settings.GoodMods.Remove(entry.ModType); // bricked clears good
+                        }
+                        ImGui.SameLine();
+                        bool newGood = GoodPill(entry.ModType, isGood);
+                        if (newGood != isGood)
+                        {
+                            Settings.GoodMods[entry.ModType] = newGood;
+                            if (newGood) Settings.BrickedMods.Remove(entry.ModType); // good clears bricked
+                        }
                     }
                 }
                 ImGui.Spacing();
@@ -324,6 +364,7 @@ namespace MapNotify
             ImGui.Separator();
             Toggle("Warning mods border", Settings.BoxForMapWarnings);
             Toggle("Bricked mods border", Settings.BoxForMapBadWarnings);
+            Toggle("Good mods border",    Settings.BoxForMapGoodMods);
             Toggle("Use Box style (off = Frame)", Settings.MapBorderStyle);
 
             ImGui.Spacing();
@@ -331,6 +372,7 @@ namespace MapNotify
             ImGui.Separator();
             Settings.MapBorderWarnings = ColorEdit("Warning color##wc", Settings.MapBorderWarnings);
             Settings.Bricked           = ColorEdit("Bricked color##bc", Settings.Bricked);
+            Settings.GoodModBorder     = ColorEdit("Good color##gc",    Settings.GoodModBorder);
             Settings.EightModBorder    = ColorEdit("8-Mod color##ec",   Settings.EightModBorder);
 
             ImGui.Spacing();
@@ -366,6 +408,9 @@ namespace MapNotify
             Toggle("Show mod count",             Settings.ShowModCount);
             Toggle("Show quantity %",            Settings.ShowQuantityPercent);
             Toggle("Show pack size %",           Settings.ShowPackSizePercent);
+            Toggle("Show currency drop %",       Settings.ShowCurrencyPercent);
+            Toggle("Show scarab drop %",         Settings.ShowScarabPercent);
+            Toggle("Show map drop %",            Settings.ShowMapDropPercent);
             Toggle("Horizontal separator lines", Settings.HorizontalLines);
 
             ImGui.Spacing();
