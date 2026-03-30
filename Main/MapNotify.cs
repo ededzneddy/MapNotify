@@ -68,9 +68,23 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
         var result = new List<NormalInventoryItem>();
         try
         {
-            var purchaseWindow = ingameState.IngameUi.PurchaseWindow;
-            if (purchaseWindow?.IsVisible == true)
-                result.AddRange(FindMapItems(purchaseWindow));
+            // Town / map Faustus
+            var pw = ingameState.IngameUi.PurchaseWindow;
+            if (pw?.IsVisible == true)
+            {
+                var items = pw.TabContainer?.VisibleStash?.VisibleInventoryItems;
+                if (items != null)
+                    result.AddRange(items.Where(i => i?.Item != null && i.Item.HasComponent<MapKey>()));
+            }
+
+            // Hideout Faustus
+            var pwh = ingameState.IngameUi.PurchaseWindowHideout;
+            if (pwh?.IsVisible == true)
+            {
+                var items = pwh.TabContainer?.VisibleStash?.VisibleInventoryItems;
+                if (items != null)
+                    result.AddRange(items.Where(i => i?.Item != null && i.Item.HasComponent<MapKey>()));
+            }
         }
         catch { }
         return result;
@@ -158,6 +172,28 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
                         else if (Settings.ShowPackSizePercent && ItemDetails.PackSize != 0)
                             ImGui.TextColored(new nuVector4(1f, 1f, 1f, 1f), $"{ItemDetails.PackSize}%% Pack Size");
 
+                        // Currency / Scarab / Map drop % (memory map / uber mods)
+                        {
+                            var goldCol  = new nuVector4(1f, 0.85f, 0.3f, 1f);
+                            bool anyCurScarMap = false;
+                            if (Settings.ShowCurrencyPercent && ItemDetails.Currency != 0)
+                            {
+                                ImGui.TextColored(goldCol, $"{ItemDetails.Currency}%% Currency");
+                                anyCurScarMap = true;
+                            }
+                            if (Settings.ShowScarabPercent && ItemDetails.Scarabs != 0)
+                            {
+                                if (anyCurScarMap) ImGui.SameLine();
+                                ImGui.TextColored(goldCol, $"{ItemDetails.Scarabs}%% Scarab");
+                                anyCurScarMap = true;
+                            }
+                            if (Settings.ShowMapDropPercent && ItemDetails.MapDrop != 0)
+                            {
+                                if (anyCurScarMap) ImGui.SameLine();
+                                ImGui.TextColored(goldCol, $"{ItemDetails.MapDrop}%% Maps");
+                            }
+                        }
+
                         if (Settings.HorizontalLines && ItemDetails.ActiveWarnings.Count > 0 && (Settings.ShowModCount || Settings.ShowModWarnings))
                         {
                             ImGui.Separator();
@@ -192,20 +228,26 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
     // Cached flat lists for border checking — avoids LINQ per-frame per-item
     private List<string> _cachedEnabledTypes  = new();
     private List<string> _cachedBrickedTypes  = new();
+    private List<string> _cachedGoodTypes     = new();
     private int          _lastEnabledCount    = -1;
     private int          _lastBrickedCount    = -1;
+    private int          _lastGoodCount       = -1;
 
     private void RefreshBorderCache()
     {
         int ec = LiveSettings?.EnabledMods?.Count ?? 0;
-        int bc = LiveSettings?.BrickedMods?.Count  ?? 0;
-        if (ec == _lastEnabledCount && bc == _lastBrickedCount) return;
+        int bc = LiveSettings?.BrickedMods?.Count ?? 0;
+        int gc = LiveSettings?.GoodMods?.Count    ?? 0;
+        if (ec == _lastEnabledCount && bc == _lastBrickedCount && gc == _lastGoodCount) return;
         _cachedEnabledTypes = LiveSettings?.EnabledMods?
             .Where(kv => kv.Value).Select(kv => kv.Key).ToList() ?? new();
         _cachedBrickedTypes = LiveSettings?.BrickedMods?
             .Where(kv => kv.Value).Select(kv => kv.Key).ToList() ?? new();
+        _cachedGoodTypes = LiveSettings?.GoodMods?
+            .Where(kv => kv.Value).Select(kv => kv.Key).ToList() ?? new();
         _lastEnabledCount = ec;
         _lastBrickedCount = bc;
+        _lastGoodCount    = gc;
     }
 
     private void DrawMapBorders(NormalInventoryItem item)
@@ -237,7 +279,7 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
 
             if (mods != null)
             {
-                // Check bricked first — highest priority
+                // Priority: Bricked > Good > Warning
                 if (Settings.BoxForMapBadWarnings)
                 {
                     bool hasBricked = mods.Any(mod =>
@@ -247,7 +289,15 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
                         modColor = Settings.Bricked.ToSharpColor();
                 }
 
-                // Then check warnings
+                if (modColor == null && Settings.BoxForMapGoodMods)
+                {
+                    bool hasGood = mods.Any(mod =>
+                        _cachedGoodTypes.Any(t =>
+                            mod.RawName.Contains(t, StringComparison.OrdinalIgnoreCase)));
+                    if (hasGood)
+                        modColor = Settings.GoodModBorder.ToSharpColor();
+                }
+
                 if (modColor == null && Settings.BoxForMapWarnings)
                 {
                     bool hasWarning = mods.Any(mod =>
@@ -284,22 +334,6 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
         }
     }
 
-    private static IEnumerable<NormalInventoryItem> FindMapItems(ExileCore.PoEMemory.Element element, int depth = 0)
-    {
-        if (element == null || depth > 6) yield break;
-        var invItem = element.AsObject<NormalInventoryItem>();
-        if (invItem?.Item != null && invItem.Item.HasComponent<MapKey>())
-        {
-            yield return invItem;
-            yield break;
-        }
-        foreach (var child in element.Children)
-        {
-            foreach (var found in FindMapItems(child, depth + 1))
-                yield return found;
-        }
-    }
-
     public override void Render()
     {
         var uiHover = ingameState.UIHover;
@@ -325,17 +359,11 @@ public partial class MapNotify : BaseSettingsPlugin<MapNotifySettings>
                 DrawMapBorders(item);
         }
 
-        // Faustus market
+        // Faustus market (town/map + hideout, toggleable)
         if (Settings.ShowBorderInFaustus)
-        try
         {
-            var purchaseWindow = ingameState.IngameUi.PurchaseWindow;
-            if (purchaseWindow?.IsVisible == true)
-            {
-                foreach (var item in FindMapItems(purchaseWindow))
-                    DrawMapBorders(item);
-            }
+            foreach (var item in _faustusItems.Value)
+                DrawMapBorders(item);
         }
-        catch { }
     }
 }
